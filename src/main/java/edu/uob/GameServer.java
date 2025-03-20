@@ -8,6 +8,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -36,6 +37,7 @@ public final class GameServer {
     * @param entitiesFile The game configuration file containing all game entities to use in your game
     * @param actionsFile The game configuration file containing all game actions to use in your game
     */
+
     public GameServer(File entitiesFile, File actionsFile) {
         try {
             // Initialize the game world with entities
@@ -212,8 +214,8 @@ public final class GameServer {
         }
 
         // Check if there's a path to the destination
-        GamePath gamePath = (GamePath) currentLocation.getPathTo(destination);
-        if (gamePath == null) {
+        GamePath path = currentLocation.getPathTo(destination);
+        if (path == null) {
             return "There is no path from here to " + locationName + ".";
         }
 
@@ -228,106 +230,122 @@ public final class GameServer {
             return "Please enter a command.";
         }
 
-        // Extract potential triggers and subjects
-        Set<String> potentialTriggers = new HashSet<>();
+        // Combine all words to form the complete command
+        String fullCommand = String.join(" ", words).toLowerCase();
+        System.out.println("Full command: " + fullCommand);
+
+        // Extract all non-trigger words as potential subjects
         Set<String> potentialSubjects = new HashSet<>();
-
-        // Simple approach: consider each word as a potential trigger or subject
         for (String word : words) {
-            if (!this.isCommonWord(word)) {
-                potentialTriggers.add(word);
-                potentialSubjects.add(word);
-            }
+            potentialSubjects.add(word.toLowerCase());
         }
 
-        // Try each potential trigger
-        List<GameAction> matchingActions = null;
-        String usedTrigger = null;
+        System.out.println("Potential subjects: " + potentialSubjects);
 
-        for (String trigger : potentialTriggers) {
-            List<GameAction> actions = this.actionManager.findMatchingActions(trigger, potentialSubjects);
-            if (!actions.isEmpty()) {
-                if (matchingActions != null) {
-                    // Multiple matching actions found
-                    return "Ambiguous command. Please be more specific.";
-                }
-                matchingActions = actions;
-                usedTrigger = trigger;
-            }
-        }
+        // Find actions that match the command string
+        List<GameAction> candidateActions = this.actionManager.findActionsByTrigger(fullCommand);
+        System.out.println("Found " + candidateActions.size() + " actions matching triggers in the command");
 
-        if (matchingActions == null || matchingActions.isEmpty()) {
+        if (candidateActions.isEmpty()) {
             return "I don't understand what you want to do.";
         }
 
-        if (matchingActions.size() > 1) {
-            return "There is more than one '" + usedTrigger + "' action possible - which one do you want to perform?";
+        // Find the action with the longest matching trigger
+        GameAction bestAction = null;
+        String bestTrigger = null;
+        int longestTriggerLength = 0;
+
+        for (GameAction action : candidateActions) {
+            String matchingTrigger = action.getMatchingTrigger(fullCommand);
+            if (matchingTrigger != null && matchingTrigger.length() > longestTriggerLength) {
+                bestAction = action;
+                bestTrigger = matchingTrigger;
+                longestTriggerLength = matchingTrigger.length();
+            }
+        }
+
+        if (bestAction == null) {
+            return "I don't understand what you want to do.";
+        }
+
+        System.out.println("Selected best action with trigger: " + bestTrigger);
+
+        // Check if at least one subject is mentioned
+        boolean atLeastOneSubjectMentioned = false;
+        for (String requiredSubject : bestAction.getSubjects()) {
+            if (potentialSubjects.contains(requiredSubject.toLowerCase())) {
+                atLeastOneSubjectMentioned = true;
+                break;
+            }
+        }
+
+        if (!atLeastOneSubjectMentioned && !bestAction.getSubjects().isEmpty()) {
+            return "Your command must include at least one subject of the action.";
+        }
+
+        // Check if ALL required subject entities are available to the player
+        for (String subjectName : bestAction.getSubjects()) {
+            if (!isEntityAvailableToPlayer(player, subjectName)) {
+                return "You don't have access to " + subjectName + ".";
+            }
         }
 
         // Execute the matching action
-        GameAction action = matchingActions.get(0);
-        return this.performAction(player, action);
+        return this.performAction(player, bestAction);
     }
 
-    private boolean isCommonWord(String word) {
-        Set<String> commonWords = new HashSet<>(Arrays.asList(
-                "the", "a", "an", "and", "with", "using", "to", "at", "in", "on", "by", "for", "from",
-                "of", "or", "it", "its", "this", "that", "these", "those", "my", "your", "his", "her", "their"));
+    /**
+     * Check if an entity is available to the player (in inventory or current location)
+     */
+    private boolean isEntityAvailableToPlayer(Player player, String entityName) {
+        Location currentLocation = player.getCurrentLocation();
 
-        boolean isCommon = commonWords.contains(word.toLowerCase());
-        System.out.println("Word '" + word + "' is common word? " + isCommon);
-        return isCommon;
+        // Check player inventory
+        if (player.getFromInventory(entityName) != null) {
+            System.out.println("Entity '" + entityName + "' found in player inventory");
+            return true;
+        }
+
+        // Check artefacts in current location
+        if (currentLocation.getArtefact(entityName) != null) {
+            System.out.println("Entity '" + entityName + "' found as artefact in current location");
+            return true;
+        }
+
+        // Check furniture in current location
+        for (Furniture furniture : currentLocation.getFurniture()) {
+            if (furniture.getName().equalsIgnoreCase(entityName)) {
+                System.out.println("Entity '" + entityName + "' found as furniture in current location");
+                return true;
+            }
+        }
+
+        // Check characters in current location
+        for (Character character : currentLocation.getCharacters()) {
+            if (character.getName().equalsIgnoreCase(entityName)) {
+                System.out.println("Entity '" + entityName + "' found as character in current location");
+                return true;
+            }
+        }
+
+        // Check if the location itself is a subject
+        if (currentLocation.getName().equalsIgnoreCase(entityName)) {
+            System.out.println("Entity '" + entityName + "' is the current location");
+            return true;
+        }
+
+        System.out.println("Entity '" + entityName + "' is NOT available to player");
+        return false;
     }
+
+    // We no longer need the isCommonWord method as we now look for matches directly
+
 
     private String performAction(Player player, GameAction action) {
         Location currentLocation = player.getCurrentLocation();
 
-        // Check if all subject entities are available to the player
-        for (String subjectName : action.getSubjects()) {
-            boolean available = false;
-
-            // Check player inventory
-            if (player.getFromInventory(subjectName) != null) {
-                available = true;
-            }
-
-            // Check current location
-            if (!available) {
-                // Check artefacts
-                if (currentLocation.getArtefact(subjectName) != null) {
-                    available = true;
-                }
-
-                // Check furniture
-                if (!available) {
-                    for (Furniture furniture : currentLocation.getFurniture()) {
-                        if (furniture.getName().equalsIgnoreCase(subjectName)) {
-                            available = true;
-                            break;
-                        }
-                    }
-                }
-
-                // Check characters in location
-                if (!available) {
-                    for (Character character : currentLocation.getCharacters()) {
-                        if (character.getName().equalsIgnoreCase(subjectName)) {
-                            available = true;
-                            break;
-                        }
-                    }
-                }
-
-                // Check if the location itself is a subject
-                if (!available && currentLocation.getName().equalsIgnoreCase(subjectName)) {
-                    available = true;
-                }
-            }
-
-            if (!available) {
-                return "You don't have access to " + subjectName + ".";
-            }
-        }
+        // Note: Subject entity availability is now checked in executeCustomAction
+        // We can assume all required entities are available at this point
 
         // Handle consumed entities
         for (String entityName : action.getConsumed()) {
@@ -342,9 +360,9 @@ public final class GameServer {
             // Check if it's a location (path removal)
             Location locationToConsume = this.gameWorld.getLocation(entityName);
             if (locationToConsume != null) {
-                GamePath gamePathToRemove = (GamePath) currentLocation.getPathTo(locationToConsume);
-                if (gamePathToRemove != null) {
-                    currentLocation.removePath(gamePathToRemove);
+                GamePath pathToRemove = currentLocation.getPathTo(locationToConsume);
+                if (pathToRemove != null) {
+                    currentLocation.removePath(pathToRemove);
                 }
                 continue;
             }
@@ -381,8 +399,8 @@ public final class GameServer {
             // Check if it's a location (path creation)
             Location locationToProduce = this.gameWorld.getLocation(entityName);
             if (locationToProduce != null) {
-                GamePath newGamePath = new GamePath(currentLocation, locationToProduce);
-                currentLocation.addPath(newGamePath);
+                GamePath newPath = new GamePath(currentLocation, locationToProduce);
+                currentLocation.addPath(newPath);
                 continue;
             }
 
@@ -400,18 +418,18 @@ public final class GameServer {
     }
 
     /**
-    * Do not change the following method signature or we won't be able to mark your submission
-    * Starts a *blocking* socket server listening for new connections.
-    *
-    * @param portNumber The port to listen on.
-    * @throws IOException If any IO related operation fails.
-    */
+     * Do not change the following method signature or we won't be able to mark your submission
+     * Starts a *blocking* socket server listening for new connections.
+     *
+     * @param portNumber The port to listen on.
+     * @throws IOException If any IO related operation fails.
+     */
     public void blockingListenOn(int portNumber) throws IOException {
         try (ServerSocket s = new ServerSocket(portNumber)) {
             System.out.println("Server listening on port " + portNumber);
             while (!Thread.interrupted()) {
                 try {
-                    blockingHandleConnection(s);
+                    this.blockingHandleConnection(s);
                 } catch (IOException e) {
                     System.out.println("Connection closed");
                 }
@@ -420,21 +438,21 @@ public final class GameServer {
     }
 
     /**
-    * Do not change the following method signature or we won't be able to mark your submission
-    * Handles an incoming connection from the socket server.
-    *
-    * @param serverSocket The client socket to read/write from.
-    * @throws IOException If any IO related operation fails.
-    */
+     * Do not change the following method signature or we won't be able to mark your submission
+     * Handles an incoming connection from the socket server.
+     *
+     * @param serverSocket The client socket to read/write from.
+     * @throws IOException If any IO related operation fails.
+     */
     private void blockingHandleConnection(ServerSocket serverSocket) throws IOException {
         try (Socket s = serverSocket.accept();
-        BufferedReader reader = new BufferedReader(new InputStreamReader(s.getInputStream()));
-        BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(s.getOutputStream()))) {
+             BufferedReader reader = new BufferedReader(new InputStreamReader(s.getInputStream()));
+             BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(s.getOutputStream()))) {
             System.out.println("Connection established");
             String incomingCommand = reader.readLine();
             if(incomingCommand != null) {
                 System.out.println("Received message from " + incomingCommand);
-                String result = handleCommand(incomingCommand);
+                String result = this.handleCommand(incomingCommand);
                 writer.write(result);
                 writer.write("\n" + END_OF_TRANSMISSION + "\n");
                 writer.flush();

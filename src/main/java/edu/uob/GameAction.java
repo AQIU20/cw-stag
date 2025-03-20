@@ -58,7 +58,31 @@ public class GameAction {
         return this.narration;
     }
 
-    public boolean hasTrigger(String trigger) {
-        return this.triggers.contains(trigger.toLowerCase());
+    /**
+     * Check if this action's trigger is contained in the command.
+     * Returns the matched trigger if found, otherwise null.
+     */
+    public String getMatchingTrigger(String command) {
+        String longestMatch = null;
+        int longestLength = 0;
+
+        for (String trigger : this.triggers) {
+            if (command.contains(trigger)) {
+                // Keep track of the longest matching trigger
+                if (trigger.length() > longestLength) {
+                    longestMatch = trigger;
+                    longestLength = trigger.length();
+                }
+            }
+        }
+
+        return longestMatch;
+    }
+
+    /**
+     * Check if any trigger matches the command
+     */
+    public boolean hasTrigger(String command) {
+        return getMatchingTrigger(command) != null;
     }
 }
