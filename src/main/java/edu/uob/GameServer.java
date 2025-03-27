@@ -10,10 +10,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
 public final class GameServer {
     private GameWorld gameWorld;
@@ -24,8 +21,8 @@ public final class GameServer {
     private static final char END_OF_TRANSMISSION = 4;
 
     public static void main(String[] args) throws IOException {
-        File entitiesFile = Paths.get("config" + File.separator + "basic-entities.dot").toAbsolutePath().toFile();
-        File actionsFile = Paths.get("config" + File.separator + "basic-actions.xml").toAbsolutePath().toFile();
+        File entitiesFile = Paths.get("config" + File.separator + "extended-entities.dot").toAbsolutePath().toFile();
+        File actionsFile = Paths.get("config" + File.separator + "extended-actions.xml").toAbsolutePath().toFile();
         GameServer server = new GameServer(entitiesFile, actionsFile);
         server.blockingListenOn(8888);
     }
@@ -55,11 +52,11 @@ public final class GameServer {
     }
 
     /**
-    * Do not change the following method signature or we won't be able to mark your submission
-    * This method handles all incoming game commands and carries out the corresponding actions.</p>
-    *
-    * @param command The incoming command to be processed
-    */
+     * Do not change the following method signature or we won't be able to mark your submission
+     * This method handles all incoming game commands and carries out the corresponding actions.</p>
+     *
+     * @param command The incoming command to be processed
+     */
     public String handleCommand(String command) {
         try {
             // Extract username and actual command
@@ -82,11 +79,12 @@ public final class GameServer {
                 player = this.gameWorld.createPlayer(username);
             }
 
-            // Handle player death if needed
+            // Handle player death if needed - this is now redundant since we handle it in performAction
+            // but we keep it as a safety check
             if (player.isDead()) {
                 player.resetHealth();
                 player.setCurrentLocation(this.gameWorld.getStartLocation());
-                return "You died and lost all of your items, you must return to the start of the game";
+                return "You have been returned to the start of the game after your death.";
             }
 
             // Parse and execute the command
@@ -153,12 +151,25 @@ public final class GameServer {
             return "What do you want to get?";
         }
 
-        // Extraneous entities check
-        if (args.length > 1) {
+        // Filter out common words
+        List<String> filteredArgs = new LinkedList<>();
+        for (int i = 0; i < args.length; i++) {
+            if (!this.isCommonWord(args[i])) {
+                filteredArgs.add(args[i]);
+            }
+        }
+
+        // Extraneous entities check (after filtering common words)
+        if (filteredArgs.size() > 1) {
             return "You can only get one item at a time.";
         }
 
-        String artefactName = args[0];
+        // If no non-common words, return error
+        if (filteredArgs.isEmpty()) {
+            return "What do you want to get?";
+        }
+
+        String artefactName = filteredArgs.get(0);
         Location currentLocation = player.getCurrentLocation();
         Artefact artefact = currentLocation.getArtefact(artefactName);
 
@@ -177,12 +188,25 @@ public final class GameServer {
             return "What do you want to drop?";
         }
 
-        // Extraneous entities check
-        if (args.length > 1) {
+        // Filter out common words
+        List<String> filteredArgs = new LinkedList<>();
+        for (int i = 0; i < args.length; i++) {
+            if (!this.isCommonWord(args[i])) {
+                filteredArgs.add(args[i]);
+            }
+        }
+
+        // Extraneous entities check (after filtering common words)
+        if (filteredArgs.size() > 1) {
             return "You can only drop one item at a time.";
         }
 
-        String artefactName = args[0];
+        // If no non-common words, return error
+        if (filteredArgs.isEmpty()) {
+            return "What do you want to drop?";
+        }
+
+        String artefactName = filteredArgs.get(0);
         Artefact artefact = player.getFromInventory(artefactName);
 
         if (artefact == null) {
@@ -200,12 +224,25 @@ public final class GameServer {
             return "Where do you want to go?";
         }
 
-        // Extraneous entities check
-        if (args.length > 1) {
+        // Filter out common words
+        List<String> filteredArgs = new LinkedList<>();
+        for (int i = 0; i < args.length; i++) {
+            if (!this.isCommonWord(args[i])) {
+                filteredArgs.add(args[i]);
+            }
+        }
+
+        // Extraneous entities check (after filtering common words)
+        if (filteredArgs.size() > 1) {
             return "You can only go to one location at a time.";
         }
 
-        String locationName = args[0];
+        // If no non-common words, return error
+        if (filteredArgs.isEmpty()) {
+            return "Where do you want to go?";
+        }
+
+        String locationName = filteredArgs.get(0);
         Location currentLocation = player.getCurrentLocation();
         Location destination = this.gameWorld.getLocation(locationName);
 
@@ -222,7 +259,12 @@ public final class GameServer {
         // Move player to new location
         player.setCurrentLocation(destination);
 
-        return "You have moved to " + locationName + ".\n" + destination.generateDescription();
+        StringBuilder responseBuilder = new StringBuilder();
+        responseBuilder.append("You have moved to ");
+        responseBuilder.append(locationName);
+        responseBuilder.append(".\n");
+        responseBuilder.append(destination.generateDescription());
+        return responseBuilder.toString();
     }
 
     private String executeCustomAction(Player player, String[] words) {
@@ -231,7 +273,14 @@ public final class GameServer {
         }
 
         // Combine all words to form the complete command
-        String fullCommand = String.join(" ", words).toLowerCase();
+        StringBuilder commandBuilder = new StringBuilder();
+        for (int i = 0; i < words.length; i++) {
+            if (i > 0) {
+                commandBuilder.append(" ");
+            }
+            commandBuilder.append(words[i].toLowerCase());
+        }
+        String fullCommand = commandBuilder.toString();
         System.out.println("Full command: " + fullCommand);
 
         // Extract all non-trigger words as potential subjects
@@ -250,17 +299,92 @@ public final class GameServer {
             return "I don't understand what you want to do.";
         }
 
-        // Find the action with the longest matching trigger
+        // Group candidate actions by their associated action (based on subjects and consumed/produced)
+        Map<String, List<GameAction>> actionGroups = new HashMap<>();
+
+        Iterator<GameAction> actionIterator = candidateActions.iterator();
+        while (actionIterator.hasNext()) {
+            GameAction action = actionIterator.next();
+
+            // Create a unique key for this action based on its subjects, consumed, and produced entities
+            StringBuilder keyBuilder = new StringBuilder();
+
+            // Add subjects to key
+            List<String> sortedSubjects = new LinkedList<>();
+            Iterator<String> subjectIterator = action.getSubjects().iterator();
+            while (subjectIterator.hasNext()) {
+                sortedSubjects.add(subjectIterator.next());
+            }
+            // Manual sort instead of Collections.sort
+            this.sortStringList(sortedSubjects);
+            Iterator<String> sortedSubjectIterator = sortedSubjects.iterator();
+            while (sortedSubjectIterator.hasNext()) {
+                String subject = sortedSubjectIterator.next();
+                keyBuilder.append("S:");
+                keyBuilder.append(subject);
+                keyBuilder.append(";");
+            }
+
+            // Add consumed entities to key
+            List<String> sortedConsumed = new LinkedList<>();
+            Iterator<String> consumedIterator = action.getConsumed().iterator();
+            while (consumedIterator.hasNext()) {
+                sortedConsumed.add(consumedIterator.next());
+            }
+            // Manual sort
+            this.sortStringList(sortedConsumed);
+            Iterator<String> sortedConsumedIterator = sortedConsumed.iterator();
+            while (sortedConsumedIterator.hasNext()) {
+                String entity = sortedConsumedIterator.next();
+                keyBuilder.append("C:");
+                keyBuilder.append(entity);
+                keyBuilder.append(";");
+            }
+
+            // Add produced entities to key
+            List<String> sortedProduced = new LinkedList<>();
+            Iterator<String> producedIterator = action.getProduced().iterator();
+            while (producedIterator.hasNext()) {
+                sortedProduced.add(producedIterator.next());
+            }
+            // Manual sort
+            this.sortStringList(sortedProduced);
+            Iterator<String> sortedProducedIterator = sortedProduced.iterator();
+            while (sortedProducedIterator.hasNext()) {
+                String entity = sortedProducedIterator.next();
+                keyBuilder.append("P:");
+                keyBuilder.append(entity);
+                keyBuilder.append(";");
+            }
+
+            String actionKey = keyBuilder.toString();
+
+            if (!actionGroups.containsKey(actionKey)) {
+                actionGroups.put(actionKey, new LinkedList<GameAction>());
+            }
+            actionGroups.get(actionKey).add(action);
+        }
+
+        // If there are multiple action groups, it's ambiguous
+        if (actionGroups.size() > 1) {
+            return "Ambiguous command. Your command contains triggers for different actions.";
+        }
+
+        // Now we know all candidates are for the same action, choose the one with the longest matching trigger
         GameAction bestAction = null;
         String bestTrigger = null;
         int longestTriggerLength = 0;
 
-        for (GameAction action : candidateActions) {
+        Iterator<GameAction> candidateIterator = candidateActions.iterator();
+        while (candidateIterator.hasNext()) {
+            GameAction action = candidateIterator.next();
             String matchingTrigger = action.getMatchingTrigger(fullCommand);
-            if (matchingTrigger != null && matchingTrigger.length() > longestTriggerLength) {
-                bestAction = action;
-                bestTrigger = matchingTrigger;
-                longestTriggerLength = matchingTrigger.length();
+            if (matchingTrigger != null) {
+                if (bestTrigger == null || matchingTrigger.length() > longestTriggerLength) {
+                    bestAction = action;
+                    bestTrigger = matchingTrigger;
+                    longestTriggerLength = matchingTrigger.length();
+                }
             }
         }
 
@@ -272,10 +396,11 @@ public final class GameServer {
 
         // Check if at least one subject is mentioned
         boolean atLeastOneSubjectMentioned = false;
-        for (String requiredSubject : bestAction.getSubjects()) {
+        Iterator<String> requiredSubjectIterator = bestAction.getSubjects().iterator();
+        while (requiredSubjectIterator.hasNext() && !atLeastOneSubjectMentioned) {
+            String requiredSubject = requiredSubjectIterator.next();
             if (potentialSubjects.contains(requiredSubject.toLowerCase())) {
                 atLeastOneSubjectMentioned = true;
-                break;
             }
         }
 
@@ -284,14 +409,38 @@ public final class GameServer {
         }
 
         // Check if ALL required subject entities are available to the player
-        for (String subjectName : bestAction.getSubjects()) {
-            if (!isEntityAvailableToPlayer(player, subjectName)) {
-                return "You don't have access to " + subjectName + ".";
+        Iterator<String> subjectNameIterator = bestAction.getSubjects().iterator();
+        while (subjectNameIterator.hasNext()) {
+            String subjectName = subjectNameIterator.next();
+            if (!this.isEntityAvailableToPlayer(player, subjectName)) {
+                StringBuilder messageBuilder = new StringBuilder();
+                messageBuilder.append("You don't have access to ");
+                messageBuilder.append(subjectName);
+                messageBuilder.append(".");
+                return messageBuilder.toString();
             }
         }
 
         // Execute the matching action
         return this.performAction(player, bestAction);
+    }
+
+    /**
+     * Simple method to sort a list of strings without using Collections.sort
+     */
+    private void sortStringList(List<String> list) {
+        // Simple bubble sort implementation
+        int n = list.size();
+        for (int i = 0; i < n - 1; i++) {
+            for (int j = 0; j < n - i - 1; j++) {
+                if (list.get(j).compareTo(list.get(j + 1)) > 0) {
+                    // Swap elements
+                    String temp = list.get(j);
+                    list.set(j, list.get(j + 1));
+                    list.set(j + 1, temp);
+                }
+            }
+        }
     }
 
     /**
@@ -338,6 +487,31 @@ public final class GameServer {
         return false;
     }
 
+    /**
+     * Check if a word is a common word that should be ignored
+     */
+    private boolean isCommonWord(String word) {
+        // List of common words to ignore
+        Set<String> commonWords = new HashSet<>();
+        commonWords.add("the");
+        commonWords.add("a");
+        commonWords.add("an");
+        commonWords.add("and");
+        commonWords.add("with");
+        commonWords.add("using");
+        commonWords.add("to");
+        commonWords.add("at");
+        commonWords.add("in");
+        commonWords.add("on");
+        commonWords.add("by");
+        commonWords.add("for");
+        commonWords.add("from");
+        commonWords.add("of");
+        commonWords.add("or");
+
+        return commonWords.contains(word.toLowerCase());
+    }
+
     // We no longer need the isCommonWord method as we now look for matches directly
 
 
@@ -352,6 +526,9 @@ public final class GameServer {
             if (entityName.equalsIgnoreCase("health")) {
                 player.decreaseHealth();
                 if (player.isDead()) {
+                    // Immediately reset the player and move to start location
+                    player.resetHealth();
+                    player.setCurrentLocation(this.gameWorld.getStartLocation());
                     return action.getNarration() + "\nYou died and lost all of your items, you must return to the start of the game";
                 }
                 continue;
