@@ -83,6 +83,6 @@ public class GameAction {
      * Check if any trigger matches the command
      */
     public boolean hasTrigger(String command) {
-        return getMatchingTrigger(command) != null;
+        return this.getMatchingTrigger(command) != null;
     }
 }

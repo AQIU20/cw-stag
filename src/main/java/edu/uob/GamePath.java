@@ -33,8 +33,17 @@ public class GamePath {
     @Override
     public int hashCode() {
         int result = 17;
-        result = 31 * result + (this.source != null ? this.source.hashCode() : 0);
-        result = 31 * result + (this.destination != null ? this.destination.hashCode() : 0);
+        if (this.source != null) {
+            result = 31 * result + this.source.hashCode();
+        } else {
+            result = 31 * result;
+        }
+        if (this.destination != null) {
+            result = 31 * result + this.destination.hashCode();
+        } else {
+            result = 31 * result;
+        }
         return result;
     }
+
 }

@@ -26,7 +26,7 @@ public class ActionParser {
         for (int i = 0; i < actions.getLength(); i++) {
             if (actions.item(i) instanceof Element) {
                 Element actionElement = (Element) actions.item(i);
-                GameAction action = parseAction(actionElement);
+                GameAction action = this.parseAction(actionElement);
                 actionManager.addAction(action);
             }
         }
