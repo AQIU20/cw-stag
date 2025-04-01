@@ -100,6 +100,6 @@ public class GameWorld {
             }
             character.setCurrentLocation(this.getStoreroom());
         }
-        // Furniture and locations are handled differently
+
     }
 }

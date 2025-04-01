@@ -6,6 +6,5 @@ public class Artefact extends GameEntity {
         super(name, description);
     }
 
-    // Artefacts are simple entities that can be collected by players
-    // Additional functionality can be added here if needed
+
 }

@@ -28,13 +28,13 @@ public final class GameServer {
         StringBuilder entityPathBuilder = new StringBuilder();
         entityPathBuilder.append("config");
         entityPathBuilder.append(File.separator);
-        entityPathBuilder.append("extended-entities.dot");
+        entityPathBuilder.append("basic-entities.dot");
         File entitiesFile = new File(entityPathBuilder.toString());
 
         StringBuilder actionPathBuilder = new StringBuilder();
         actionPathBuilder.append("config");
         actionPathBuilder.append(File.separator);
-        actionPathBuilder.append("extended-actions.xml");
+        actionPathBuilder.append("basic-actions.xml");
         File actionsFile = new File(actionPathBuilder.toString());
 
         GameServer server = new GameServer(entitiesFile, actionsFile);
@@ -110,7 +110,7 @@ public final class GameServer {
     }
 
     /**
-     * 将输入字符串分解成单词（使用 Scanner 而非 String.split）。
+     * split to words
      */
     private List<String> tokenizeCommand(String command) {
         List<String> tokens = new LinkedList<>();
@@ -123,22 +123,21 @@ public final class GameServer {
     }
 
     /**
-     * 检测命令中出现的所有触发词标识符，包括内置命令和自定义动作的触发词。
-     * 内置命令直接以小写字符串作为标识，自定义动作则以动作对象作为标识（同一动作只添加一次）。
+     * find all tokens
      */
     private Set<Object> detectTriggers(String command) {
         Set<Object> detected = new HashSet<>();
-        // 检测内置命令触发词
+
         for (String builtin : BUILT_IN_COMMANDS) {
             if (commandMatchesTrigger(command, builtin)) {
                 detected.add(builtin.toLowerCase());
             }
         }
-        // 检测自定义动作触发词
+
         for (GameAction action : this.actionManager.getAllActions()) {
             for (String trigger : action.getTriggers()) {
                 if (commandMatchesTrigger(command, trigger)) {
-                    detected.add(action); // 同一动作只添加一次
+                    detected.add(action);
                     break;
                 }
             }
@@ -147,7 +146,7 @@ public final class GameServer {
     }
 
     /**
-     * 利用正则表达式判断命令中是否包含完整单词形式的触发词。
+     * find Trigger
      */
     private boolean commandMatchesTrigger(String command, String trigger) {
         String pattern = String.format(".*\\b%s\\b.*", trigger.toLowerCase());
@@ -155,8 +154,7 @@ public final class GameServer {
     }
 
     /**
-     * 在执行任何命令之前，先统一检测整个命令中出现的触发词，
-     * 如果同时出现多个不同标识，则返回歧义错误信息。
+     * stop different trigger
      */
     private String executeCommand(Player player, String command) {
         // Convert to lowercase for case-insensitive matching
@@ -166,13 +164,11 @@ public final class GameServer {
             return "Please enter a command.";
         }
 
-        // 全局检测触发词（内置和自定义）
         Set<Object> detected = this.detectTriggers(lowerCommand);
         if (detected.size() > 1) {
             return "Ambiguous command. Your command contains triggers for different actions.";
         }
 
-        // 根据首个单词是否为内置命令进行分支
         if (BUILT_IN_COMMANDS.contains(words.get(0))) {
             return this.executeBuiltInCommand(player, words.get(0), words.subList(1, words.size()));
         }
@@ -210,7 +206,7 @@ public final class GameServer {
             return "What do you want to get?";
         }
 
-        // 在当前地点中查找匹配的 artefact
+        // artefact
         Location currentLocation = player.getCurrentLocation();
         Artefact foundArtefact = null;
         String matchedName = null;
@@ -350,7 +346,7 @@ public final class GameServer {
             return "Please enter a command.";
         }
 
-        // 组合所有单词形成完整命令
+        // Complete command
         StringBuilder commandBuilder = new StringBuilder();
         for (int i = 0; i < words.size(); i++) {
             if (i > 0) {
@@ -361,20 +357,19 @@ public final class GameServer {
         String fullCommand = commandBuilder.toString();
         System.out.printf("Full command: %s%n", fullCommand);
 
-        // 检测命令中出现的所有触发词（包括内置和自定义）
+        // check trigger
         Set<Object> detected = this.detectTriggers(fullCommand);
         if (detected.size() > 1) {
             return "Ambiguous command. Your command contains triggers for different actions.";
         }
 
-        // 提取所有单词作为潜在主题
+        // extract words
         Set<String> potentialSubjects = new HashSet<>();
         for (String word : words) {
             potentialSubjects.add(word.toLowerCase());
         }
         System.out.printf("Potential subjects: %s%n", potentialSubjects);
 
-        // 查找与命令字符串匹配的动作
         List<GameAction> candidateActions = this.actionManager.findActionsByTrigger(fullCommand);
         System.out.printf("Found %d actions matching triggers in the command%n", candidateActions.size());
 
@@ -382,17 +377,15 @@ public final class GameServer {
             return "I don't understand what you want to do.";
         }
 
-        // 如果候选动作中不止一个唯一动作，则视为歧义命令
         Set<GameAction> uniqueActions = new HashSet<>(candidateActions);
         if (uniqueActions.size() > 1) {
             return "Ambiguous command. Your command contains triggers for different actions.";
         }
 
-        // 选取候选动作中的第一个（也是唯一一个）
         GameAction bestAction = uniqueActions.iterator().next();
         System.out.printf("Selected action with triggers: %s%n", bestAction.getTriggers());
 
-        // 检查是否至少包含一个主题
+        // check at least one subject
         boolean atLeastOneSubjectMentioned = false;
         Iterator<String> requiredSubjectIterator = bestAction.getSubjects().iterator();
         while (requiredSubjectIterator.hasNext() && !atLeastOneSubjectMentioned) {
@@ -405,7 +398,7 @@ public final class GameServer {
             return "Your command must include at least one subject of the action.";
         }
 
-        // 检查玩家是否具备所有必需的主题实体
+        // check necessary subject
         Iterator<String> subjectNameIterator = bestAction.getSubjects().iterator();
         while (subjectNameIterator.hasNext()) {
             String subjectName = subjectNameIterator.next();
@@ -435,7 +428,7 @@ public final class GameServer {
     }
 
     /**
-     * 检查实体是否对玩家可用（在库存或当前位置中）
+     * check entity available
      */
     private boolean isEntityAvailableToPlayer(Player player, String entityName) {
         Location currentLocation = player.getCurrentLocation();

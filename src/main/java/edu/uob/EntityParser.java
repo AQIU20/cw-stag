@@ -40,27 +40,26 @@ public class EntityParser {
     }
 
     private void parseLocations(Graph locationsGraph) {
-        // 直接使用迭代器遍历子图
+
         Iterator<Graph> locSubgraphsIt = locationsGraph.getSubgraphs().iterator();
         while (locSubgraphsIt.hasNext()) {
             Graph locationGraph = locSubgraphsIt.next();
-            // 获取 location 详细信息（假定每个子图至少有一个节点）
+            // location
             Node locationNode = locationGraph.getNodes(false).iterator().next();
             String locationName = locationNode.getId().getId();
             String locationDescription = locationNode.getAttribute("description");
 
-            // 创建并存储 location
+            // add location
             Location location = new Location(locationName, locationDescription);
             this.gameWorld.addLocation(location);
             this.locationMap.put(locationName.toLowerCase(), location);
 
-            // 处理该 location 内的实体
             this.parseEntitiesInLocation(locationGraph, location);
         }
     }
 
     private void parseEntitiesInLocation(Graph locationGraph, Location location) {
-        // 直接使用迭代器遍历子图
+
         Iterator<Graph> entityGraphsIt = locationGraph.getSubgraphs().iterator();
         while (entityGraphsIt.hasNext()) {
             Graph entityGraph = entityGraphsIt.next();
